@@ -1,0 +1,153 @@
+@extends('layouts.pos')
+
+@section('title', 'Edit Supplier - POS Toko Buku')
+@section('page-title', 'Edit Supplier')
+
+@section('styles')
+<style>
+    .form-card {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 22px;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.03);
+        padding: 44px;
+        margin-top: 10px;
+    }
+    .form-section-title {
+        font-size: 0.85rem;
+        color: #2563eb;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        border-bottom: 2px solid #eff6ff;
+        padding-bottom: 10px;
+        margin-bottom: 22px;
+    }
+
+    .custom-label {
+        font-weight: 600;
+        color: #475569;
+        font-size: 0.82rem;
+        margin-bottom: 7px;
+    }
+    .custom-input, .custom-textarea {
+        border-radius: 11px;
+        border: 1px solid #e2e8f0;
+        padding: 11px 15px;
+        font-size: 0.875rem;
+        color: #334155;
+        transition: all 0.2s;
+        background-color: #f8fafc;
+    }
+    .custom-input:focus, .custom-textarea:focus {
+        border-color: #3b82f6;
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        outline: none;
+        background-color: #fff;
+    }
+
+    .btn-save {
+        background: linear-gradient(135deg, #f59e0b, #d97706);
+        border: none;
+        color: #ffffff;
+        font-weight: 700;
+        border-radius: 12px;
+        padding: 13px 30px;
+        font-size: 0.925rem;
+        box-shadow: 0 4px 12px rgba(245, 158, 11, 0.2);
+        transition: all 0.2s;
+    }
+    .btn-save:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 20px rgba(245, 158, 11, 0.3);
+        background: linear-gradient(135deg, #d97706, #b45309);
+        color: #ffffff;
+    }
+    .btn-back {
+        border-radius: 12px;
+        padding: 13px 26px;
+        font-weight: 600;
+        font-size: 0.925rem;
+        border: 1px solid #e2e8f0;
+        background-color: #ffffff;
+        color: #475569;
+        transition: all 0.2s;
+        text-decoration: none;
+    }
+    .btn-back:hover {
+        background-color: #f8fafc;
+        color: #334155;
+        border-color: #cbd5e1;
+    }
+</style>
+@endsection
+
+@section('content')
+<div class="container-fluid px-0" style="max-width: 800px;">
+
+    <!-- Back Button Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h3 class="fw-bold text-dark mb-1"><i class="bi bi-pencil-square text-warning me-2"></i>Edit Supplier</h3>
+            <p class="text-muted small mb-0">Ubah informasi data distributor dan mitra penyuplai pasokan barang Anda.</p>
+        </div>
+        <a href="{{ route('supplier.index') }}" class="btn btn-outline-secondary btn-sm fw-semibold px-3" style="border-radius: 8px;">
+            <i class="bi bi-arrow-left me-1"></i> Kembali ke Daftar
+        </a>
+    </div>
+
+    <!-- Alert Errors box -->
+    @if ($errors->any())
+        <div class="alert alert-danger alert-dismissible fade show border-0 shadow-sm rounded-3 mb-4" role="alert" style="background-color: rgba(239, 68, 68, 0.12); color: #991b1b;">
+            <div class="fw-bold mb-1"><i class="bi bi-exclamation-triangle-fill me-2"></i>Terjadi kesalahan input:</div>
+            <ul class="mb-0 mt-2 ps-3 small">
+                @foreach ($errors->all() as $error)
+                    <li>{{ $error }}</li>
+                @endforeach
+            </ul>
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    @endif
+
+    <!-- Form Container Card -->
+    <div class="form-card">
+        <form action="{{ route('supplier.update', $supplier->id) }}" method="POST">
+            @csrf
+            @method('PUT')
+
+            <!-- Section 1: Profil Supplier -->
+            <div class="form-section-title">Profil Distributor / Supplier</div>
+            
+            <div class="row g-3 mb-4">
+                <div class="col-md-6">
+                    <label class="form-label custom-label">Nama Supplier *</label>
+                    <input type="text" name="nama_supplier" class="form-control custom-input" placeholder="Masukkan nama perusahaan / perorangan" value="{{ old('nama_supplier', $supplier->nama_supplier) }}" required>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label custom-label">No Telepon</label>
+                    <input type="text" name="no_telepon" class="form-control custom-input" placeholder="Contoh: 08123456789" value="{{ old('no_telepon', $supplier->no_telepon) }}">
+                </div>
+            </div>
+
+            <!-- Section 2: Informasi Tambahan -->
+            <div class="form-section-title">Detail Lokasi & Alamat</div>
+
+            <div class="mb-4">
+                <label class="form-label custom-label">Alamat Lengkap</label>
+                <textarea name="alamat" class="form-control custom-textarea" rows="4" placeholder="Masukkan nama jalan, kota, provinsi, dan kode pos... (opsional)">{{ old('alamat', $supplier->alamat) }}</textarea>
+            </div>
+
+            <!-- Action Buttons -->
+            <hr class="text-muted my-4">
+            <div class="d-flex justify-content-end gap-2">
+                <a href="{{ route('supplier.index') }}" class="btn btn-back">
+                    <i class="bi bi-x-circle me-1"></i> Batal
+                </a>
+                <button type="submit" class="btn btn-save">
+                    <i class="bi bi-check-circle-fill me-1"></i> Perbarui Supplier
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+@endsection
