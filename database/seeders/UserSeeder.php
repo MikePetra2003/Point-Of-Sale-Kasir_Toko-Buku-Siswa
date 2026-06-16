@@ -14,7 +14,7 @@ class UserSeeder extends Seeder
             [
                 'name' => 'Yudi',
                 'password' => bcrypt('TokoSiswaNo49'),
-                'role' => 'Pemilik ',
+                'role' => 'Pemilik',
             ]
         );
 
