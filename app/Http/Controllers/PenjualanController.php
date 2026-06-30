@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Barang;
+use App\Models\BarangSatuan;
 use App\Models\DetailPenjualan;
 use App\Models\Pelanggan;
 use App\Models\Pembayaran;
@@ -44,7 +45,8 @@ class PenjualanController extends Controller
      */
     public function create()
     {
-        $barangs = Barang::with(['kategori', 'satuan'])
+        $barangs = Barang::with(['kategori', 'satuan', 'barangSatuan.satuan'])
+            ->where('is_active', true)
             ->where('stok', '>', 0)
             ->orderBy('nama_barang')
             ->get();
@@ -64,6 +66,7 @@ class PenjualanController extends Controller
         $request->validate([
             'items' => 'required|array|min:1',
             'items.*.barang_id' => 'required|exists:barang,id',
+            'items.*.barang_satuan_id' => 'nullable|exists:barang_satuan,id',
             'items.*.jumlah' => 'required|integer|min:1',
             'pelanggan_id' => 'nullable|exists:pelanggan,id',
             'diskon' => 'nullable|numeric|min:0',
@@ -75,13 +78,18 @@ class PenjualanController extends Controller
             ->map(function ($item) {
                 return [
                     'barang_id' => (int) $item['barang_id'],
+                    'barang_satuan_id' => (int) ($item['barang_satuan_id']
+                        ?? BarangSatuan::where('barang_id', $item['barang_id'])->where('is_satuan_dasar', true)->value('id')),
                     'jumlah' => (int) $item['jumlah'],
                 ];
             })
-            ->groupBy('barang_id')
-            ->map(function ($rows, $barangId) {
+            ->groupBy(fn ($item) => $item['barang_id'].'-'.$item['barang_satuan_id'])
+            ->map(function ($rows) {
+                $first = $rows->first();
+
                 return [
-                    'barang_id' => (int) $barangId,
+                    'barang_id' => (int) $first['barang_id'],
+                    'barang_satuan_id' => (int) $first['barang_satuan_id'],
                     'jumlah' => $rows->sum('jumlah'),
                 ];
             })
@@ -101,15 +109,35 @@ class PenjualanController extends Controller
                     throw new \RuntimeException('Barang yang dipilih tidak valid.');
                 }
 
+                $barangSatuanIds = $items->pluck('barang_satuan_id');
+                $barangSatuans = BarangSatuan::with('satuan')
+                    ->whereIn('id', $barangSatuanIds)
+                    ->get()
+                    ->keyBy('id');
+
+                if ($barangSatuans->count() !== $barangSatuanIds->count()) {
+                    throw new \RuntimeException('Satuan barang yang dipilih tidak valid.');
+                }
+
+                $satuanTidakSesuaiBarang = $items->first(function ($item) use ($barangSatuans) {
+                    return (int) $barangSatuans[$item['barang_satuan_id']]->barang_id !== (int) $item['barang_id'];
+                });
+
+                if ($satuanTidakSesuaiBarang) {
+                    throw new \RuntimeException('Satuan yang dipilih tidak sesuai dengan barang.');
+                }
+
                 $totalHarga = 0;
                 foreach ($items as $item) {
                     $barang = $barangs[$item['barang_id']];
+                    $barangSatuan = $barangSatuans[$item['barang_satuan_id']];
+                    $jumlahDasar = $item['jumlah'] * (int) $barangSatuan->konversi_ke_satuan_dasar;
 
-                    if ($barang->stok < $item['jumlah']) {
+                    if ($barang->stok < $jumlahDasar) {
                         throw new \RuntimeException("Stok {$barang->nama_barang} tidak mencukupi. Tersisa: {$barang->stok}");
                     }
 
-                    $totalHarga += $item['jumlah'] * $barang->harga_jual;
+                    $totalHarga += $item['jumlah'] * $barangSatuan->harga_jual;
                 }
 
                 if ($diskon > $totalHarga) {
@@ -131,6 +159,22 @@ class PenjualanController extends Controller
 
                 if ($isKredit && $totalAkhir < self::MINIMUM_TOTAL_KREDIT) {
                     throw new \RuntimeException('Transaksi kredit hanya tersedia untuk total belanja minimal Rp '.number_format(self::MINIMUM_TOTAL_KREDIT, 0, ',', '.').'.');
+                }
+
+                if ($isKredit) {
+                    if (blank($request->pelanggan_id)) {
+                        throw new \RuntimeException('Transaksi kredit harus memilih pelanggan terdaftar. Pelanggan Umum tidak boleh berhutang.');
+                    }
+
+                    $pelangganKredit = Pelanggan::find($request->pelanggan_id);
+
+                    if (! $pelangganKredit) {
+                        throw new \RuntimeException('Pelanggan yang dipilih tidak valid.');
+                    }
+
+                    if (! $pelangganKredit->boleh_kredit) {
+                        throw new \RuntimeException('Pelanggan ini belum diizinkan menggunakan kredit. Aktifkan izin kredit di Data Pelanggan (oleh owner).');
+                    }
                 }
 
                 $sisaPiutang = $isKredit ? $totalAkhir : 0;
@@ -181,17 +225,24 @@ class PenjualanController extends Controller
 
                 foreach ($items as $item) {
                     $barang = $barangs[$item['barang_id']];
-                    $subtotal = $item['jumlah'] * $barang->harga_jual;
+                    $barangSatuan = $barangSatuans[$item['barang_satuan_id']];
+                    $konversi = (int) $barangSatuan->konversi_ke_satuan_dasar;
+                    $jumlahDasar = $item['jumlah'] * $konversi;
+                    $subtotal = $item['jumlah'] * $barangSatuan->harga_jual;
 
                     DetailPenjualan::create([
                         'penjualan_id' => $penjualan->id,
                         'barang_id' => $barang->id,
-                        'jumlah' => $item['jumlah'],
-                        'harga_jual' => $barang->harga_jual,
+                        'barang_satuan_id' => $barangSatuan->id,
+                        'satuan_id' => $barangSatuan->satuan_id,
+                        'jumlah' => $jumlahDasar,
+                        'jumlah_satuan' => $item['jumlah'],
+                        'konversi_satuan' => $konversi,
+                        'harga_jual' => $barangSatuan->harga_jual,
                         'subtotal' => $subtotal,
                     ]);
 
-                    $barang->decrement('stok', $item['jumlah']);
+                    $barang->decrement('stok', $jumlahDasar);
                 }
 
                 return [
@@ -222,7 +273,7 @@ class PenjualanController extends Controller
      */
     public function show(Penjualan $penjualan)
     {
-        $penjualan->load(['user', 'pelanggan', 'detailPenjualan.barang', 'pembayaran']);
+        $penjualan->load(['user', 'pelanggan', 'detailPenjualan.barang', 'detailPenjualan.satuan', 'pembayaran']);
 
         $whatsappReceiptUrl = $this->whatsappReceiptUrl($penjualan);
 
@@ -234,7 +285,7 @@ class PenjualanController extends Controller
      */
     public function printThermal(Penjualan $penjualan)
     {
-        $penjualan->load(['user', 'pelanggan', 'detailPenjualan.barang', 'pembayaran']);
+        $penjualan->load(['user', 'pelanggan', 'detailPenjualan.barang', 'detailPenjualan.satuan', 'pembayaran']);
 
         $printerName = config('printer.receipt_printer_name', 'EP80PLUS');
         $lineWidth = (int) config('printer.receipt_line_width', 48);
@@ -296,7 +347,9 @@ class PenjualanController extends Controller
                 $printer->text($line."\n");
             }
 
-            $qtyPrice = $detail->jumlah.' x '.$this->rupiah((float) $detail->harga_jual);
+            $jumlah = (int) ($detail->jumlah_satuan ?: $detail->jumlah);
+            $namaSatuan = $detail->satuan->nama_satuan ?? 'pcs';
+            $qtyPrice = $jumlah.' '.$namaSatuan.' x '.$this->rupiah((float) $detail->harga_jual);
             $printer->text($this->receiptRow($qtyPrice, $this->rupiah((float) $detail->subtotal), $lineWidth)."\n");
         }
 
@@ -386,7 +439,9 @@ class PenjualanController extends Controller
 
         foreach ($penjualan->detailPenjualan as $detail) {
             $lines[] = '- '.($detail->barang->nama_barang ?? '-');
-            $lines[] = '  '.$detail->jumlah.' x '.$this->rupiah((float) $detail->harga_jual).' = '.$this->rupiah((float) $detail->subtotal);
+            $jumlah = (int) ($detail->jumlah_satuan ?: $detail->jumlah);
+            $namaSatuan = $detail->satuan->nama_satuan ?? 'pcs';
+            $lines[] = '  '.$jumlah.' '.$namaSatuan.' x '.$this->rupiah((float) $detail->harga_jual).' = '.$this->rupiah((float) $detail->subtotal);
         }
 
         $totalBayar = (float) $penjualan->pembayaran->sum('jumlah_bayar');

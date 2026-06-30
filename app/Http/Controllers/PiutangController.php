@@ -17,12 +17,13 @@ class PiutangController extends Controller
     public function index(Request $request)
     {
         $keyword = $request->keyword;
-        $status = $request->status;
+        $status = $request->input('status', 'belum_lunas');
 
         $piutang = PiutangPelanggan::with([
             'pelanggan',
             'penjualan.user',
             'penjualan.detailPenjualan.barang',
+            'penjualan.detailPenjualan.satuan',
             'penjualan.pembayaran',
         ])
             ->when($keyword, function ($query) use ($keyword) {
@@ -54,11 +55,127 @@ class PiutangController extends Controller
             'pelanggan',
             'penjualan.user',
             'penjualan.detailPenjualan.barang',
+            'penjualan.detailPenjualan.satuan',
             'penjualan.pembayaran',
             'pembayaranPiutang',
         ]);
 
         return view('piutang.show', compact('piutang'));
+    }
+
+    /**
+     * Kartu piutang berisi ringkasan saldo per pelanggan.
+     */
+    public function kartu(Request $request)
+    {
+        $keyword = $request->keyword;
+        $status = $request->input('status', 'semua');
+
+        $kartuPiutang = PiutangPelanggan::query()
+            ->select([
+                'pelanggan_id',
+                DB::raw('COUNT(*) as jumlah_transaksi'),
+                DB::raw('SUM(total_piutang) as total_piutang'),
+                DB::raw('SUM(total_dibayar) as total_dibayar'),
+                DB::raw('SUM(sisa_piutang) as sisa_piutang'),
+                DB::raw('MAX(tanggal_jatuh_tempo) as jatuh_tempo_terakhir'),
+            ])
+            ->with('pelanggan')
+            ->whereNotNull('pelanggan_id')
+            ->when($keyword, function ($query) use ($keyword) {
+                $query->whereHas('pelanggan', function ($q) use ($keyword) {
+                    $q->where('nama_pelanggan', 'like', "%{$keyword}%")
+                        ->orWhere('no_id_pelanggan', 'like', "%{$keyword}%")
+                        ->orWhere('no_telepon', 'like', "%{$keyword}%");
+                });
+            })
+            ->when($status !== 'semua', function ($query) use ($status) {
+                if ($status === 'belum_lunas') {
+                    $query->whereIn('status', ['belum_lunas', 'sebagian']);
+                } else {
+                    $query->where('status', $status);
+                }
+            })
+            ->groupBy('pelanggan_id')
+            ->orderByRaw('SUM(sisa_piutang) DESC')
+            ->paginate(15);
+
+        $stats = [
+            'pelanggan' => PiutangPelanggan::whereNotNull('pelanggan_id')->distinct('pelanggan_id')->count('pelanggan_id'),
+            'total_piutang' => PiutangPelanggan::whereNotNull('pelanggan_id')->sum('total_piutang'),
+            'total_dibayar' => PiutangPelanggan::whereNotNull('pelanggan_id')->sum('total_dibayar'),
+            'sisa_piutang' => PiutangPelanggan::whereNotNull('pelanggan_id')->sum('sisa_piutang'),
+        ];
+
+        return view('piutang.kartu.index', compact('kartuPiutang', 'keyword', 'status', 'stats'));
+    }
+
+    /**
+     * Detail mutasi kartu piutang per pelanggan dengan saldo berjalan.
+     */
+    public function kartuDetail(Pelanggan $pelanggan)
+    {
+        $piutangList = PiutangPelanggan::with([
+            'penjualan',
+            'pembayaranPiutang' => fn ($query) => $query->orderBy('tanggal_bayar')->orderBy('id'),
+        ])
+            ->where('pelanggan_id', $pelanggan->id)
+            ->orderBy('created_at')
+            ->orderBy('id')
+            ->get();
+
+        abort_if($piutangList->isEmpty(), 404);
+
+        $mutasi = collect();
+
+        foreach ($piutangList as $piutang) {
+            $tanggalPiutang = $piutang->penjualan?->tanggal_penjualan ?? $piutang->created_at ?? now();
+            $bukti = $piutang->penjualan?->nomor_invoice ?? 'PIUTANG-'.$piutang->id;
+
+            $mutasi->push([
+                'tanggal' => $tanggalPiutang,
+                'urutan' => $tanggalPiutang->format('YmdHis').'000'.$piutang->id,
+                'bukti' => $bukti,
+                'keterangan' => 'Piutang dari transaksi penjualan',
+                'piutang' => (float) $piutang->total_piutang,
+                'pembayaran' => 0,
+                'saldo' => 0,
+                'piutang_id' => $piutang->id,
+            ]);
+
+            foreach ($piutang->pembayaranPiutang as $bayar) {
+                $mutasi->push([
+                    'tanggal' => $bayar->tanggal_bayar,
+                    'urutan' => $bayar->tanggal_bayar->format('YmdHis').'100'.$bayar->id,
+                    'bukti' => $bukti,
+                    'keterangan' => trim('Pembayaran piutang '.strtoupper($bayar->metode_pembayaran).' '.($bayar->keterangan ? '- '.$bayar->keterangan : '')),
+                    'piutang' => 0,
+                    'pembayaran' => (float) $bayar->jumlah_bayar,
+                    'saldo' => 0,
+                    'piutang_id' => $piutang->id,
+                ]);
+            }
+        }
+
+        $saldo = 0;
+        $mutasi = $mutasi
+            ->sortBy('urutan')
+            ->values()
+            ->map(function (array $item) use (&$saldo) {
+                $saldo += $item['piutang'] - $item['pembayaran'];
+                $item['saldo'] = max(0, $saldo);
+
+                return $item;
+            });
+
+        $summary = [
+            'jumlah_transaksi' => $piutangList->count(),
+            'total_piutang' => $piutangList->sum('total_piutang'),
+            'total_dibayar' => $piutangList->sum('total_dibayar'),
+            'sisa_piutang' => $piutangList->sum('sisa_piutang'),
+        ];
+
+        return view('piutang.kartu.show', compact('pelanggan', 'piutangList', 'mutasi', 'summary'));
     }
 
     /**
@@ -75,6 +192,7 @@ class PiutangController extends Controller
 
         abort_unless($this->isPiutangKredit($piutang), 404);
         abort_if($piutang->pembayaranPiutang->isNotEmpty(), 404);
+        abort_unless($piutang->pelanggan_id && $piutang->pelanggan, 404);
 
         return view('piutang.edit', compact('piutang'));
     }
@@ -93,13 +211,18 @@ class PiutangController extends Controller
         abort_unless($this->isPiutangKredit($piutang), 404);
 
         $validated = $request->validate([
-            'nama_pelanggan' => 'required|string|max:50',
             'no_telepon' => 'required|string|max:20',
             'tanggal_jatuh_tempo' => 'required|date',
             'keterangan' => 'nullable|string|max:100',
             'jumlah_bayar_awal' => 'required|numeric|min:1',
             'metode_pembayaran_awal' => 'required|in:tunai,qris,transfer',
         ]);
+
+        if (! $piutang->pelanggan) {
+            return back()
+                ->withInput()
+                ->with('error', 'Piutang kredit harus terhubung ke pelanggan terdaftar.');
+        }
 
         if ($piutang->pembayaranPiutang->isNotEmpty()) {
             return back()
@@ -118,21 +241,9 @@ class PiutangController extends Controller
             $sisaPiutang = max(0, (float) $piutang->total_piutang - $jumlahBayarAwal);
             $statusPiutang = $sisaPiutang <= 0 ? 'lunas' : 'sebagian';
 
-            $pelanggan = $piutang->pelanggan;
-            $pelangganData = [
-                'nama_pelanggan' => trim($validated['nama_pelanggan']),
+            $piutang->pelanggan->update([
                 'no_telepon' => $validated['no_telepon'],
-            ];
-
-            if ($pelanggan) {
-                $pelanggan->update($pelangganData);
-            } else {
-                $pelanggan = Pelanggan::create($pelangganData);
-
-                $piutang->penjualan?->update([
-                    'pelanggan_id' => $pelanggan->id,
-                ]);
-            }
+            ]);
 
             PembayaranPiutang::create([
                 'piutang_id' => $piutang->id,
@@ -143,7 +254,7 @@ class PiutangController extends Controller
             ]);
 
             $piutang->update([
-                'pelanggan_id' => $pelanggan->id,
+                'pelanggan_id' => $piutang->pelanggan->id,
                 'tanggal_jatuh_tempo' => $validated['tanggal_jatuh_tempo'],
                 'keterangan' => $validated['keterangan'] ?? null,
                 'total_dibayar' => $jumlahBayarAwal,

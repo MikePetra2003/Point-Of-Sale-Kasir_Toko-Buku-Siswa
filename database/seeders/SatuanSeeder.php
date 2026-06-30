@@ -12,7 +12,7 @@ class SatuanSeeder extends Seeder
      */
     public function run(): void
     {
-        foreach (['pcs', 'pack'] as $namaSatuan) {
+        foreach (['pcs', 'pack', 'box', 'rim', 'lusin'] as $namaSatuan) {
             DB::table('satuan')->updateOrInsert(
                 ['nama_satuan' => $namaSatuan],
                 [

@@ -12,6 +12,11 @@ class Pelanggan extends Model
         'no_id_pelanggan',
         'nama_pelanggan',
         'no_telepon',
+        'boleh_kredit',
+    ];
+
+    protected $casts = [
+        'boleh_kredit' => 'boolean',
     ];
 
     protected static function booted(): void

@@ -327,12 +327,23 @@
         </div>
         <div class="product-list" id="listBarang">
             @foreach ($barangs as $barang)
+            @php
+                $satuanJson = $barang->barangSatuan->map(function ($unit) {
+                    return [
+                        'id' => $unit->id,
+                        'nama' => $unit->satuan->nama_satuan ?? 'pcs',
+                        'konversi' => $unit->konversi_ke_satuan_dasar,
+                        'harga_jual' => (float) $unit->harga_jual,
+                    ];
+                })->values()->toJson();
+            @endphp
             <div class="product-item barang-row"
                 data-id="{{ $barang->id }}"
                 data-kode="{{ $barang->kode_barang }}"
                 data-nama="{{ $barang->nama_barang }}"
                 data-harga="{{ $barang->harga_jual }}"
-                data-stok="{{ $barang->stok }}">
+                data-stok="{{ $barang->stok }}"
+                data-satuan='{{ $satuanJson }}'>
                 <div class="product-info">
                     <div class="product-name">{{ $barang->nama_barang }}</div>
                     <div class="product-code">{{ $barang->kode_barang }}</div>
@@ -381,7 +392,9 @@
                     <select name="pelanggan_id" id="pelangganSelect" class="form-select">
                         <option value="">Umum</option>
                         @foreach ($pelanggans as $plg)
-                            <option value="{{ $plg->id }}">{{ $plg->nama_pelanggan }}</option>
+                            <option value="{{ $plg->id }}" data-boleh-kredit="{{ $plg->boleh_kredit ? '1' : '0' }}">
+                                {{ $plg->nama_pelanggan }}{{ $plg->boleh_kredit ? '' : ' (belum boleh kredit)' }}
+                            </option>
                         @endforeach
                     </select>
                 </div>
@@ -404,7 +417,7 @@
                         <option value="kredit" id="opsiKredit">Kredit</option>
                     </select>
                     <div class="payment-helper" id="paymentHelper">
-                        Kredit aktif untuk belanja minimal Rp {{ number_format($minimumTotalKredit, 0, ',', '.') }}. Jika pelanggan masih Umum, data pelanggan wajib diisi di Form Piutang.
+                        Kredit hanya untuk pelanggan terdaftar yang sudah diizinkan owner, dengan belanja minimal Rp {{ number_format($minimumTotalKredit, 0, ',', '.') }}.
                     </div>
                 </div>
 
@@ -425,7 +438,7 @@
 
                 <div class="piutang-warning piutang-info d-none" id="creditInfo">
                     <i class="bi bi-info-circle me-1"></i>
-                    Transaksi kredit akan disimpan terlebih dulu lalu diarahkan ke form piutang baru untuk mengisi bayar awal dan jatuh tempo.
+                    Transaksi kredit akan disimpan lalu diarahkan ke form pelengkap piutang (jatuh tempo dan bayar awal).
                 </div>
 
                 <button type="submit" class="btn-submit-pos" id="btnSimpan" disabled>
@@ -469,8 +482,31 @@ function setPaymentWarning(message) {
     warning.classList.remove('d-none');
 }
 
+function hasSelectedPelanggan() {
+    return document.getElementById('pelangganSelect').value !== '';
+}
+
+function selectedPelangganBolehKredit() {
+    const select = document.getElementById('pelangganSelect');
+    const option = select.options[select.selectedIndex];
+    return option && option.value !== '' && option.dataset.bolehKredit === '1';
+}
+
 function canUseKredit(totalAkhir) {
-    return totalAkhir >= MINIMUM_TOTAL_KREDIT;
+    return totalAkhir >= MINIMUM_TOTAL_KREDIT && hasSelectedPelanggan() && selectedPelangganBolehKredit();
+}
+
+function kreditBlockReason(totalAkhir) {
+    if (totalAkhir < MINIMUM_TOTAL_KREDIT) {
+        return 'Metode kredit hanya tersedia untuk total belanja minimal ' + formatRupiah(MINIMUM_TOTAL_KREDIT) + '.';
+    }
+    if (!hasSelectedPelanggan()) {
+        return 'Pilih pelanggan terdaftar terlebih dahulu. Pelanggan Umum tidak boleh berhutang.';
+    }
+    if (!selectedPelangganBolehKredit()) {
+        return 'Pelanggan ini belum diizinkan kredit. Minta owner mengaktifkan izin kredit di Data Pelanggan.';
+    }
+    return '';
 }
 
 function syncKreditOption(totalAkhir) {
@@ -526,19 +562,62 @@ function refreshStokBadge(id) {
     tombol.disabled = stok <= 0;
 }
 
-function tambahKeKeranjang(id, nama, harga) {
+function tambahKeKeranjang(id, nama, satuanOptions) {
+    if (!satuanOptions.length) { alert('Barang ini belum memiliki data satuan.'); return; }
+
+    const satuan = satuanOptions[0];
+    const konversi = parseInt(satuan.konversi) || 1;
     const stokTersedia = stokProduk[id] ?? 0;
-    if (stokTersedia <= 0) { alert('Stok ' + nama + ' sudah habis!'); return; }
+    if (stokTersedia < konversi) { alert('Stok ' + nama + ' tidak mencukupi!'); return; }
 
     let existing = keranjang.find(item => item.id === id);
     if (existing) {
         existing.jumlah++;
         existing.subtotal = existing.jumlah * existing.harga;
     } else {
-        keranjang.push({ id, nama, harga, jumlah: 1, subtotal: harga });
+        const harga = parseFloat(satuan.harga_jual) || 0;
+        keranjang.push({
+            id,
+            nama,
+            satuanOptions,
+            barangSatuanId: satuan.id,
+            namaSatuan: satuan.nama,
+            konversi,
+            harga,
+            jumlah: 1,
+            subtotal: harga
+        });
     }
 
-    stokProduk[id] = Math.max(0, stokProduk[id] - 1);
+    stokProduk[id] = Math.max(0, stokProduk[id] - konversi);
+    refreshStokBadge(id);
+    renderKeranjang();
+}
+
+function ubahSatuan(id, barangSatuanId) {
+    let item = keranjang.find(i => i.id === id);
+    if (!item) return;
+
+    const satuan = item.satuanOptions.find(option => parseInt(option.id) === parseInt(barangSatuanId));
+    if (!satuan) return;
+
+    const konversiBaru = parseInt(satuan.konversi) || 1;
+    const kebutuhanLama = item.jumlah * item.konversi;
+    const kebutuhanBaru = item.jumlah * konversiBaru;
+    const selisih = kebutuhanBaru - kebutuhanLama;
+
+    if (selisih > 0 && (stokProduk[id] ?? 0) < selisih) {
+        alert('Stok tidak mencukupi untuk satuan ini!');
+        renderKeranjang();
+        return;
+    }
+
+    stokProduk[id] = (stokProduk[id] ?? 0) - selisih;
+    item.barangSatuanId = satuan.id;
+    item.namaSatuan = satuan.nama;
+    item.konversi = konversiBaru;
+    item.harga = parseFloat(satuan.harga_jual) || 0;
+    item.subtotal = item.jumlah * item.harga;
     refreshStokBadge(id);
     renderKeranjang();
 }
@@ -549,11 +628,11 @@ function ubahQty(id, newQty) {
     newQty = parseInt(newQty);
     if (isNaN(newQty) || newQty < 1) { hapusDariKeranjang(id); return; }
 
-    let selisih = newQty - item.jumlah;
+    let selisih = (newQty - item.jumlah) * item.konversi;
     if (selisih > 0 && (stokProduk[id] ?? 0) < selisih) {
         alert('Stok tidak mencukupi!');
-        newQty = item.jumlah + (stokProduk[id] ?? 0);
-        selisih = newQty - item.jumlah;
+        newQty = item.jumlah + Math.floor((stokProduk[id] ?? 0) / item.konversi);
+        selisih = (newQty - item.jumlah) * item.konversi;
     }
 
     item.jumlah = newQty;
@@ -574,7 +653,7 @@ function hapusDariKeranjang(id) {
     if (item) {
         const row = document.querySelector('.barang-row[data-id="' + id + '"]');
         const stokAwal = row ? parseInt(row.dataset.stok) : 0;
-        stokProduk[id] = Math.min(stokAwal, (stokProduk[id] ?? 0) + item.jumlah);
+        stokProduk[id] = Math.min(stokAwal, (stokProduk[id] ?? 0) + (item.jumlah * item.konversi));
         refreshStokBadge(id);
     }
     keranjang = keranjang.filter(i => i.id !== id);
@@ -595,11 +674,20 @@ function renderKeranjang() {
             <div class="cart-item">
                 <div class="item-info">
                     <div class="item-name">${item.nama}</div>
-                    <div class="item-price">@ ${formatRupiah(item.harga)}</div>
+                    <div class="item-price">@ ${formatRupiah(item.harga)} / ${item.namaSatuan}</div>
+                    <div class="item-price">${item.jumlah} ${item.namaSatuan} = ${item.jumlah * item.konversi} satuan dasar</div>
                     <input type="hidden" name="items[${idx}][barang_id]" value="${item.id}">
+                    <input type="hidden" name="items[${idx}][barang_satuan_id]" value="${item.barangSatuanId}">
                 </div>
                 <input type="number" name="items[${idx}][jumlah]" value="${item.jumlah}" min="1"
                     class="item-qty" onchange="ubahQty(${item.id}, this.value)">
+                <select class="form-select" style="width:86px;font-size:.78rem;" onchange="ubahSatuan(${item.id}, this.value)">
+                    ${item.satuanOptions.map(option => `
+                        <option value="${option.id}" ${parseInt(option.id) === parseInt(item.barangSatuanId) ? 'selected' : ''}>
+                            ${option.nama}
+                        </option>
+                    `).join('')}
+                </select>
                 <div class="item-subtotal">${formatRupiah(item.subtotal)}</div>
                 <button type="button" class="btn-remove" onclick="hapusDariKeranjang(${item.id})">
                     <i class="bi bi-x"></i>
@@ -672,7 +760,7 @@ function hitungKembalian(eligibleKredit = canUseKredit(getTotalAkhir()), switche
     if (metode === 'kredit') {
         wrapper.classList.add('d-none');
         if (!eligibleKredit) {
-            setPaymentWarning('Metode kredit hanya tersedia untuk total belanja minimal ' + formatRupiah(MINIMUM_TOTAL_KREDIT) + '.');
+            setPaymentWarning(kreditBlockReason(totalAkhir));
             setSubmitState(false);
             return;
         }
@@ -714,7 +802,9 @@ document.getElementById('listBarang').addEventListener('click', function(e) {
     const btn = e.target.closest('.btn-add-cart');
     if (!btn || btn.disabled) return;
     e.preventDefault();
-    tambahKeKeranjang(parseInt(btn.dataset.id), btn.dataset.nama, parseFloat(btn.dataset.harga));
+    const row = btn.closest('.barang-row');
+    const satuanOptions = JSON.parse(row.dataset.satuan || '[]');
+    tambahKeKeranjang(parseInt(btn.dataset.id), btn.dataset.nama, satuanOptions);
 });
 
 // Search
@@ -749,7 +839,7 @@ document.getElementById('formPenjualan').addEventListener('submit', function(e) 
     if (metode === 'kredit') {
         if (!canUseKredit(totalAkhir)) {
             e.preventDefault();
-            setPaymentWarning('Metode kredit hanya tersedia untuk total belanja minimal ' + formatRupiah(MINIMUM_TOTAL_KREDIT) + '.');
+            setPaymentWarning(kreditBlockReason(totalAkhir));
             return;
         }
         return;

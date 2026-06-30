@@ -34,6 +34,11 @@ Route::middleware(['auth'])->group(function () {
         // Data pelanggan: kasir boleh tambah dan koreksi data, tetapi tidak boleh hapus.
         Route::resource('pelanggan', PelangganController::class)->except(['show', 'destroy']);
 
+        Route::middleware(['role:owner'])->group(function () {
+            Route::get('/piutang/kartu', [PiutangController::class, 'kartu'])->name('kartu.piutang.index');
+            Route::get('/piutang/kartu/{pelanggan}', [PiutangController::class, 'kartuDetail'])->name('kartu.piutang.show');
+        });
+
         // Detail piutang hasil transaksi kasir
         Route::get('/piutang/{piutang}/edit', [PiutangController::class, 'edit'])->name('piutang.edit');
         Route::patch('/piutang/{piutang}', [PiutangController::class, 'update'])->name('piutang.update');
@@ -62,6 +67,8 @@ Route::middleware(['auth'])->group(function () {
 
         // Hutang Supplier
         Route::get('/hutang', [HutangController::class, 'index'])->name('hutang.index');
+        Route::get('/hutang/kartu', [HutangController::class, 'kartu'])->name('kartu.hutang.index');
+        Route::get('/hutang/kartu/{supplier}', [HutangController::class, 'kartuDetail'])->name('kartu.hutang.show');
         Route::get('/hutang/{hutang}', [HutangController::class, 'show'])->name('hutang.show');
         Route::post('/hutang/{hutang}/bayar', [HutangController::class, 'bayar'])->name('hutang.bayar');
         Route::get('/hutang/{hutang}/edit', [HutangController::class, 'edit'])->name('hutang.edit');

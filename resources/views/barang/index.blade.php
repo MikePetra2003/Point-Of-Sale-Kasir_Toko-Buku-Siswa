@@ -161,6 +161,11 @@
             <h3 class="fw-bold text-dark mb-1"><i class="bi bi-box-seam text-primary me-2"></i>Produk Barang</h3>
             <p class="text-muted small mb-0">Kelola informasi produk buku, kategori, harga jual, dan tingkat stok inventaris kasir.</p>
         </div>
+        @if ($isOwner)
+            <a href="{{ route('barang.create') }}" class="btn btn-add">
+                <i class="bi bi-plus-circle me-1"></i>Tambah Barang
+            </a>
+        @endif
     </div>
 
     <!-- Alert Success -->
@@ -199,6 +204,7 @@
                             <th class="text-end">Harga Beli</th>
                             <th class="text-end">Harga Jual</th>
                             <th class="text-center" style="width: 100px;">Stok</th>
+                            <th class="text-center" style="width: 110px;">Status</th>
                             @if ($isOwner)
                                 <th class="text-center" style="width: 180px;">Aksi</th>
                             @endif
@@ -211,7 +217,14 @@
                             <td class="text-primary fw-semibold"><small>{{ $item->kode_barang }}</small></td>
                             <td class="fw-bold text-dark">{{ $item->nama_barang }}</td>
                             <td>{{ $item->kategori->nama_kategori ?? '-' }}</td>
-                            <td>{{ $item->satuan->nama_satuan ?? 'pcs' }}</td>
+                            <td>
+                                <div>{{ $item->satuan->nama_satuan ?? 'pcs' }} <small class="text-muted">(dasar)</small></div>
+                                @foreach ($item->barangSatuan->where('is_satuan_dasar', false) as $unit)
+                                    <div class="text-muted small">
+                                        {{ $unit->satuan->nama_satuan ?? '-' }} = {{ $unit->konversi_ke_satuan_dasar }} {{ $item->satuan->nama_satuan ?? 'pcs' }}
+                                    </div>
+                                @endforeach
+                            </td>
                             <td class="text-muted"><small>{{ $item->supplier->nama_supplier ?? '-' }}</small></td>
                             <td class="text-end text-muted">Rp {{ number_format($item->harga_beli, 0, ',', '.') }}</td>
                             <td class="text-end fw-semibold text-dark">Rp {{ number_format($item->harga_jual, 0, ',', '.') }}</td>
@@ -222,6 +235,13 @@
                                     <span class="badge-warning-stock">{{ $item->stok }} pcs</span>
                                 @else
                                     <span class="badge-danger-stock">{{ $item->stok }} pcs</span>
+                                @endif
+                            </td>
+                            <td class="text-center">
+                                @if ($item->is_active)
+                                    <span class="badge-safe">Aktif</span>
+                                @else
+                                    <span class="badge-danger-stock">Tidak Aktif</span>
                                 @endif
                             </td>
                             @if ($isOwner)
@@ -244,7 +264,7 @@
                         </tr>
                         @empty
                         <tr>
-                            <td colspan="{{ $isOwner ? 10 : 9 }}" class="text-center text-muted py-5">
+                            <td colspan="{{ $isOwner ? 11 : 10 }}" class="text-center text-muted py-5">
                                 <i class="bi bi-inbox fs-2 d-block mb-2 text-muted"></i>
                                 Belum ada data produk barang tercatat.
                             </td>

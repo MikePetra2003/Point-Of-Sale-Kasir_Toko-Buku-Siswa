@@ -12,21 +12,21 @@ class SatuanBarangTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_satuan_seeder_hanya_menyediakan_pcs_dan_pack(): void
+    public function test_satuan_seeder_menyediakan_pilihan_multi_satuan(): void
     {
         $this->seed(SatuanSeeder::class);
 
         $this->assertSame(
-            ['pack', 'pcs'],
+            ['box', 'lusin', 'pack', 'pcs', 'rim'],
             DB::table('satuan')->orderBy('nama_satuan')->pluck('nama_satuan')->all()
         );
     }
 
-    public function test_form_barang_hanya_menampilkan_satuan_pcs_dan_pack(): void
+    public function test_form_barang_menampilkan_pilihan_multi_satuan(): void
     {
         $user = User::factory()->owner()->create();
 
-        foreach (['box', 'rim', 'lusin'] as $namaSatuan) {
+        foreach (['pcs', 'pack', 'box', 'rim', 'lusin'] as $namaSatuan) {
             DB::table('satuan')->insert([
                 'nama_satuan' => $namaSatuan,
                 'created_at' => now(),
@@ -40,8 +40,9 @@ class SatuanBarangTest extends TestCase
             ->assertOk()
             ->assertSee('pcs')
             ->assertSee('pack')
-            ->assertDontSee('box</option>', false)
-            ->assertDontSee('rim</option>', false)
-            ->assertDontSee('lusin</option>', false);
+            ->assertSee('box')
+            ->assertSee('rim')
+            ->assertSee('lusin')
+            ->assertSee('Multi Satuan');
     }
 }

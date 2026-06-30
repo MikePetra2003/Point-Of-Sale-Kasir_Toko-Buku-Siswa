@@ -13,7 +13,7 @@
 <body>
     @php
         $loginProps = [
-            'action' => route('login'),
+            'action' => route('login', [], false),
             'csrfToken' => csrf_token(),
             'oldEmail' => old('email', ''),
             'errors' => [

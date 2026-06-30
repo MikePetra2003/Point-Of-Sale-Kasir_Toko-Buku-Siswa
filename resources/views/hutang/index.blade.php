@@ -414,6 +414,9 @@
     <!-- Page Header -->
     <div class="page-header">
         <h2><i class="bi bi-cash-stack me-2"></i>Hutang Supplier</h2>
+        <a href="{{ route('kartu.hutang.index') }}" class="btn btn-primary" style="border-radius:11px;font-weight:600;">
+            <i class="bi bi-journal-check me-1"></i> Kartu Hutang
+        </a>
     </div>
 
     <!-- Stats -->

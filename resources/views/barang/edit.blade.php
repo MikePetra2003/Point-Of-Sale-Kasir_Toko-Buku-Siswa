@@ -1,6 +1,6 @@
 @extends('layouts.pos')
 
-@section('title', 'Edit Produk Barang - POS SYSTEM)
+@section('title', 'Edit Produk Barang - POS SYSTEM')
 @section('page-title', 'Edit Produk Barang')
 
 @section('styles')
@@ -88,7 +88,7 @@
     <!-- Back Button Header -->
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
-            <h3 class="fw-bold text-dark mb-1"><i class="bi bi-pencil-square text-warning me-2"></i>Edit Produk</h3>
+            <h3 class="fw-bold text-dark mb-1"><i class="bi bi-pencil-square text-warning me-2"></i>Edit Barang</h3>
             <p class="text-muted small mb-0">Ubah detail data barang inventaris produk Anda.</p>
         </div>
         <a href="{{ route('barang.index') }}" class="btn btn-outline-secondary btn-sm fw-semibold px-3" style="border-radius: 8px;">
@@ -111,6 +111,12 @@
 
     <!-- Form Container Card -->
     <div class="form-card">
+        @php
+            $satuanTambahan = $barang->barangSatuan
+                ->where('is_satuan_dasar', false)
+                ->values();
+        @endphp
+
         <form action="{{ route('barang.update', $barang->id) }}" method="POST">
             @csrf
             @method('PUT')
@@ -180,6 +186,44 @@
                     <input type="number" name="stok" class="form-control custom-input" value="{{ old('stok', $barang->stok) }}" required>
                 </div>
             </div>
+
+            <!-- SECTION 3: Multi Satuan -->
+            <div class="form-section-title">Multi Satuan</div>
+            <p class="text-muted small mb-3">
+                Satuan utama menjadi satuan dasar stok. Contoh: jika satuan utama pcs, maka 1 pack bisa diisi 12 pcs.
+            </p>
+
+            @for ($i = 0; $i < 3; $i++)
+                @php($row = $satuanTambahan[$i] ?? null)
+                <div class="row g-3 mb-3">
+                    <div class="col-md-3">
+                        <label class="form-label custom-label">Satuan Tambahan</label>
+                        <select name="satuan_tambahan[{{ $i }}][satuan_id]" class="form-select custom-select">
+                            <option value="">-- Opsional --</option>
+                            @foreach ($satuan as $item)
+                                <option value="{{ $item->id }}" {{ old("satuan_tambahan.$i.satuan_id", $row?->satuan_id) == $item->id ? 'selected' : '' }}>
+                                    {{ $item->nama_satuan }}
+                                </option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label custom-label">Isi per Satuan Dasar</label>
+                        <input type="number" name="satuan_tambahan[{{ $i }}][konversi_ke_satuan_dasar]" class="form-control custom-input"
+                            value="{{ old("satuan_tambahan.$i.konversi_ke_satuan_dasar", $row?->konversi_ke_satuan_dasar) }}" min="2" placeholder="Contoh: 12">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label custom-label">Harga Beli Satuan</label>
+                        <input type="number" name="satuan_tambahan[{{ $i }}][harga_beli]" class="form-control custom-input"
+                            value="{{ old("satuan_tambahan.$i.harga_beli", $row?->harga_beli) }}" min="0" placeholder="Harga beli pack/box">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label custom-label">Harga Jual Satuan</label>
+                        <input type="number" name="satuan_tambahan[{{ $i }}][harga_jual]" class="form-control custom-input"
+                            value="{{ old("satuan_tambahan.$i.harga_jual", $row?->harga_jual) }}" min="0" placeholder="Harga jual pack/box">
+                    </div>
+                </div>
+            @endfor
 
             <!-- Action Buttons -->
             <hr class="text-muted my-4">

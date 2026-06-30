@@ -97,6 +97,25 @@
             <input type="text" name="no_telepon" class="form-control" value="{{ old('no_telepon', $pelanggan->no_telepon) }}" placeholder="Contoh: 08123456789">
         </div>
 
+        @if (auth()->user()?->role === 'owner')
+            <div class="mb-4">
+                <div class="form-check">
+                    <input type="hidden" name="boleh_kredit" value="0">
+                    <input
+                        type="checkbox"
+                        name="boleh_kredit"
+                        value="1"
+                        class="form-check-input"
+                        id="bolehKredit"
+                        {{ old('boleh_kredit', $pelanggan->boleh_kredit) ? 'checked' : '' }}>
+                    <label class="form-check-label" for="bolehKredit">
+                        Izinkan pelanggan ini bertransaksi kredit (piutang)
+                    </label>
+                </div>
+                <div class="form-text">Pelanggan baru default belum boleh kredit sampai owner mengaktifkan.</div>
+            </div>
+        @endif
+
         <div class="d-flex gap-2">
             <button type="submit" class="btn btn-save">
                 <i class="bi bi-check-lg me-1"></i> Update

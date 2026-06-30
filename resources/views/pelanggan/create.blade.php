@@ -77,7 +77,7 @@
 
 <div class="form-card">
     <h3><i class="bi bi-person-plus-fill me-2"></i>Tambah Pelanggan Baru</h3>
-    <p class="text-muted small mb-4">No ID pelanggan dibuat otomatis dari huruf awal nama, misalnya D001.</p>
+        <p class="text-muted small mb-4">No ID pelanggan dibuat otomatis. Pelanggan baru belum boleh kredit sampai owner mengaktifkan di halaman edit.</p>
 
     <form action="{{ route('pelanggan.store') }}" method="POST">
         @csrf

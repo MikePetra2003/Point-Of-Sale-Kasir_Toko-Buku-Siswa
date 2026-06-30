@@ -48,6 +48,7 @@ export default function PosLogin({
     errors = {},
     status = '',
 }) {
+    const resolvedCsrfToken = csrfToken || document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
     const [showPassword, setShowPassword] = useState(false);
     const [email, setEmail] = useState(oldEmail || '');
     const [password, setPassword] = useState('');
@@ -135,7 +136,7 @@ export default function PosLogin({
                         ) : null}
 
                         <form method="POST" action={action} noValidate onSubmit={handleSubmit}>
-                            <input type="hidden" name="_token" value={csrfToken} />
+                            <input type="hidden" name="_token" value={resolvedCsrfToken} />
 
                             <div className="mb-4">
                                 <label htmlFor="email" className="form-label login-label">

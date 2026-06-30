@@ -569,9 +569,23 @@
             </div>
 
             <div class="nav-item">
+                <a href="{{ route('kartu.piutang.index') }}" class="nav-link {{ request()->routeIs('kartu.piutang.*') ? 'active' : '' }}">
+                    <i class="bi bi-journal-text"></i>
+                    <span>Kartu Piutang</span>
+                </a>
+            </div>
+
+            <div class="nav-item">
                 <a href="{{ route('hutang.index') }}" class="nav-link {{ request()->routeIs('hutang.*') ? 'active' : '' }}">
                     <i class="bi bi-cash-stack"></i>
                     <span>Hutang Supplier</span>
+                </a>
+            </div>
+
+            <div class="nav-item">
+                <a href="{{ route('kartu.hutang.index') }}" class="nav-link {{ request()->routeIs('kartu.hutang.*') ? 'active' : '' }}">
+                    <i class="bi bi-journal-check"></i>
+                    <span>Kartu Hutang</span>
                 </a>
             </div>
 

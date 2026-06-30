@@ -26,10 +26,10 @@
                     </div>
                     <div class="modal-info-item">
                         <span>Status</span>
-                        @if ($penjualan->status_pembayaran === 'lunas')
-                            <strong><span class="badge-status badge-lunas">Lunas</span></strong>
-                        @else
+                        @if ($penjualan->status_pembayaran === 'Belum Lunas')
                             <strong><span class="badge-status badge-belum">Belum Lunas</span></strong>
+                        @else
+                            <strong><span class="badge-status badge-lunas">Lunas</span></strong>
                         @endif
                     </div>
                     <div class="modal-info-item">
@@ -55,7 +55,7 @@
                                 <tr>
                                     <td>{{ $loop->iteration }}</td>
                                     <td class="fw-semibold">{{ $detail->barang->nama_barang ?? '-' }}</td>
-                                    <td class="text-center">{{ $detail->jumlah }}</td>
+                                    <td class="text-center">{{ $detail->jumlah_satuan ?: $detail->jumlah }} {{ $detail->satuan->nama_satuan ?? 'pcs' }}</td>
                                     <td class="text-end">Rp {{ number_format($detail->harga_jual, 0, ',', '.') }}</td>
                                     <td class="text-end">Rp {{ number_format($detail->subtotal, 0, ',', '.') }}</td>
                                 </tr>

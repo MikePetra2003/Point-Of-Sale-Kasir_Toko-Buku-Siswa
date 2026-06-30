@@ -191,7 +191,6 @@ class PenjualanPiutangTest extends TestCase
         $piutang = PiutangPelanggan::firstOrFail();
 
         $response = $this->actingAs($user)->patch(route('piutang.update', $piutang->id), [
-            'nama_pelanggan' => 'Tono',
             'no_telepon' => '08123456789',
             'tanggal_jatuh_tempo' => now()->addDays(45)->format('Y-m-d'),
             'keterangan' => 'Tempo khusus pelanggan langganan',
@@ -228,7 +227,6 @@ class PenjualanPiutangTest extends TestCase
             ->assertSee('Lengkapi Piutang Pelanggan');
 
         $response = $this->actingAs($user)->patch(route('piutang.update', $piutang->id), [
-            'nama_pelanggan' => 'Tono Update',
             'no_telepon' => '0812999000',
             'tanggal_jatuh_tempo' => now()->addDays(45)->format('Y-m-d'),
             'keterangan' => 'Tempo khusus pelanggan langganan',
@@ -239,7 +237,7 @@ class PenjualanPiutangTest extends TestCase
         $response->assertRedirect(route('piutang.show', $piutang->id));
         $this->assertDatabaseHas('pelanggan', [
             'id' => $pelanggan->id,
-            'nama_pelanggan' => 'Tono Update',
+            'nama_pelanggan' => 'Tono',
             'no_telepon' => '0812999000',
         ]);
         $this->assertDatabaseHas('piutang_pelanggan', [
@@ -262,7 +260,7 @@ class PenjualanPiutangTest extends TestCase
         ]);
     }
 
-    public function test_kredit_dari_umum_membuat_pelanggan_baru_saat_form_piutang_disimpan(): void
+    public function test_kredit_tanpa_pelanggan_terdaftar_ditolak(): void
     {
         $user = User::factory()->create();
         $barang = $this->createBarang('BK-009', 'Buku Kredit Umum', 250000, 5);
@@ -277,60 +275,33 @@ class PenjualanPiutangTest extends TestCase
             'metode_pembayaran' => 'kredit',
         ]);
 
-        $piutang = PiutangPelanggan::firstOrFail();
+        $response->assertRedirect();
+        $response->assertSessionHas('error');
+        $this->assertDatabaseCount('penjualan', 0);
+        $this->assertDatabaseCount('piutang_pelanggan', 0);
+    }
 
-        $response->assertRedirect(route('piutang.edit', $piutang->id));
-        $this->assertDatabaseHas('penjualan', [
-            'id' => $piutang->penjualan_id,
-            'pelanggan_id' => null,
-            'total_akhir' => 500000,
-            'status_pembayaran' => 'sebagian',
-        ]);
-        $this->assertDatabaseHas('piutang_pelanggan', [
-            'id' => $piutang->id,
-            'pelanggan_id' => null,
-            'total_piutang' => 500000,
-            'sisa_piutang' => 500000,
-        ]);
+    public function test_kredit_pelanggan_belum_diizinkan_ditolak(): void
+    {
+        $user = User::factory()->create();
+        $pelanggan = $this->createPelanggan('Budi', false);
+        $barang = $this->createBarang('BK-010', 'Buku Kredit Baru', 250000, 5);
 
-        $this->actingAs($user)
-            ->get(route('piutang.edit', $piutang->id))
-            ->assertOk()
-            ->assertSee('Pelanggan Baru');
-
-        $response = $this->actingAs($user)->patch(route('piutang.update', $piutang->id), [
-            'nama_pelanggan' => 'Ari Pembeli Kredit',
-            'no_telepon' => '081277788899',
-            'tanggal_jatuh_tempo' => now()->addDays(30)->format('Y-m-d'),
-            'keterangan' => 'Piutang dari pelanggan baru',
-            'jumlah_bayar_awal' => 100000,
-            'metode_pembayaran_awal' => 'qris',
-        ]);
-
-        $pelanggan = Pelanggan::where('nama_pelanggan', 'Ari Pembeli Kredit')->firstOrFail();
-
-        $response->assertRedirect(route('piutang.show', $piutang->id));
-        $this->assertDatabaseHas('pelanggan', [
-            'id' => $pelanggan->id,
-            'nama_pelanggan' => 'Ari Pembeli Kredit',
-            'no_telepon' => '081277788899',
-        ]);
-        $this->assertDatabaseHas('penjualan', [
-            'id' => $piutang->penjualan_id,
+        $response = $this->actingAs($user)->post(route('penjualan.store'), [
+            'items' => [
+                [
+                    'barang_id' => $barang->id,
+                    'jumlah' => 2,
+                ],
+            ],
             'pelanggan_id' => $pelanggan->id,
+            'metode_pembayaran' => 'kredit',
         ]);
-        $this->assertDatabaseHas('piutang_pelanggan', [
-            'id' => $piutang->id,
-            'pelanggan_id' => $pelanggan->id,
-            'total_dibayar' => 100000,
-            'sisa_piutang' => 400000,
-            'status' => 'sebagian',
-        ]);
-        $this->assertDatabaseHas('pembayaran_piutang', [
-            'piutang_id' => $piutang->id,
-            'jumlah_bayar' => 100000,
-            'metode_pembayaran' => 'qris',
-        ]);
+
+        $response->assertRedirect();
+        $response->assertSessionHas('error');
+        $this->assertDatabaseCount('penjualan', 0);
+        $this->assertDatabaseCount('piutang_pelanggan', 0);
     }
 
     public function test_bayar_awal_sebesar_total_piutang_membuat_penjualan_lunas(): void
@@ -353,7 +324,6 @@ class PenjualanPiutangTest extends TestCase
         $piutang = PiutangPelanggan::firstOrFail();
 
         $response = $this->actingAs($user)->patch(route('piutang.update', $piutang->id), [
-            'nama_pelanggan' => 'Lina',
             'no_telepon' => '08123456789',
             'tanggal_jatuh_tempo' => now()->addDays(30)->format('Y-m-d'),
             'keterangan' => 'Lunas saat membuat piutang',
@@ -374,11 +344,12 @@ class PenjualanPiutangTest extends TestCase
         ]);
     }
 
-    private function createPelanggan(string $nama): Pelanggan
+    private function createPelanggan(string $nama, bool $bolehKredit = true): Pelanggan
     {
         return Pelanggan::create([
             'nama_pelanggan' => $nama,
             'no_telepon' => '08123456789',
+            'boleh_kredit' => $bolehKredit,
         ]);
     }
 

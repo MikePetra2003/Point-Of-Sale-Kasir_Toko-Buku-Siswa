@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\HutangSupplier;
 use App\Models\PembayaranHutang;
+use App\Models\Supplier;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -15,7 +16,7 @@ class HutangController extends Controller
     public function index(Request $request)
     {
         $keyword = $request->keyword;
-        $status = $request->status;
+        $status = $request->input('status', 'belum_lunas');
 
         $hutang = HutangSupplier::with([
             'supplier',
@@ -23,6 +24,7 @@ class HutangController extends Controller
             'pembelian.user',
             'pembelian.hutangSupplier',
             'pembelian.detailPembelian.barang',
+            'pembelian.detailPembelian.satuan',
             'pembayaranHutang',
         ])
             ->when($keyword, function ($query) use ($keyword) {
@@ -48,6 +50,7 @@ class HutangController extends Controller
             'nilai' => HutangSupplier::where('status', 'belum_lunas')->sum('sisa_hutang'),
             'terlambat' => HutangSupplier::where('status', 'belum_lunas')
                 ->whereDate('tanggal_jatuh_tempo', '<=', today())->count(),
+            'belum_lunas' => HutangSupplier::where('status', 'belum_lunas')->count(),
             'lunas' => HutangSupplier::where('status', 'lunas')->count(),
         ];
 
@@ -65,6 +68,7 @@ class HutangController extends Controller
             'pembelian.user',
             'pembelian.hutangSupplier',
             'pembelian.detailPembelian.barang',
+            'pembelian.detailPembelian.satuan',
             'pembayaranHutang',
         ]);
 
@@ -72,11 +76,127 @@ class HutangController extends Controller
     }
 
     /**
-     * Lunasi hutang (sisa hutang + bunga keterlambatan bila ada).
+     * Kartu hutang berisi ringkasan saldo per supplier.
+     */
+    public function kartu(Request $request)
+    {
+        $keyword = $request->keyword;
+        $status = $request->input('status', 'semua');
+
+        $kartuHutang = HutangSupplier::query()
+            ->select([
+                'supplier_id',
+                DB::raw('COUNT(*) as jumlah_transaksi'),
+                DB::raw('SUM(total_hutang) as total_hutang'),
+                DB::raw('SUM(total_dibayar) as total_dibayar'),
+                DB::raw('SUM(sisa_hutang) as sisa_hutang'),
+                DB::raw('MAX(tanggal_jatuh_tempo) as jatuh_tempo_terakhir'),
+            ])
+            ->with('supplier')
+            ->when($keyword, function ($query) use ($keyword) {
+                $query->whereHas('supplier', function ($q) use ($keyword) {
+                    $q->where('nama_supplier', 'like', "%{$keyword}%")
+                        ->orWhere('no_telepon', 'like', "%{$keyword}%")
+                        ->orWhere('email', 'like', "%{$keyword}%");
+                });
+            })
+            ->when($status !== 'semua', function ($query) use ($status) {
+                $query->where('status', $status);
+            })
+            ->groupBy('supplier_id')
+            ->orderByRaw('SUM(sisa_hutang) DESC')
+            ->paginate(15);
+
+        $stats = [
+            'supplier' => HutangSupplier::distinct('supplier_id')->count('supplier_id'),
+            'total_hutang' => HutangSupplier::sum('total_hutang'),
+            'total_dibayar' => HutangSupplier::sum('total_dibayar'),
+            'sisa_hutang' => HutangSupplier::sum('sisa_hutang'),
+        ];
+
+        return view('hutang.kartu.index', compact('kartuHutang', 'keyword', 'status', 'stats'));
+    }
+
+    /**
+     * Detail mutasi kartu hutang per supplier dengan saldo berjalan.
+     */
+    public function kartuDetail(Supplier $supplier)
+    {
+        $hutangList = HutangSupplier::with([
+            'pembelian',
+            'pembayaranHutang' => fn ($query) => $query->orderBy('tanggal_bayar')->orderBy('id'),
+        ])
+            ->where('supplier_id', $supplier->id)
+            ->orderBy('created_at')
+            ->orderBy('id')
+            ->get();
+
+        abort_if($hutangList->isEmpty(), 404);
+
+        $mutasi = collect();
+
+        foreach ($hutangList as $hutang) {
+            $tanggalHutang = $hutang->pembelian?->tanggal_pembelian ?? $hutang->created_at ?? now();
+            $bukti = $hutang->pembelian?->nomor_faktur ?? 'HUTANG-'.$hutang->id;
+
+            $mutasi->push([
+                'tanggal' => $tanggalHutang,
+                'urutan' => $tanggalHutang->format('YmdHis').'000'.$hutang->id,
+                'bukti' => $bukti,
+                'keterangan' => 'Hutang dari transaksi pembelian',
+                'hutang' => (float) $hutang->total_hutang,
+                'pembayaran' => 0,
+                'bunga' => 0,
+                'saldo' => 0,
+                'hutang_id' => $hutang->id,
+            ]);
+
+            foreach ($hutang->pembayaranHutang as $bayar) {
+                $bunga = (float) $bayar->bunga;
+                $pembayaranPokok = max(0, (float) $bayar->jumlah_bayar - $bunga);
+
+                $mutasi->push([
+                    'tanggal' => $bayar->tanggal_bayar,
+                    'urutan' => $bayar->tanggal_bayar->format('YmdHis').'100'.$bayar->id,
+                    'bukti' => $bukti,
+                    'keterangan' => trim('Pembayaran hutang '.strtoupper($bayar->metode_pembayaran).' '.($bayar->keterangan ? '- '.$bayar->keterangan : '')),
+                    'hutang' => 0,
+                    'pembayaran' => $pembayaranPokok,
+                    'bunga' => $bunga,
+                    'saldo' => 0,
+                    'hutang_id' => $hutang->id,
+                ]);
+            }
+        }
+
+        $saldo = 0;
+        $mutasi = $mutasi
+            ->sortBy('urutan')
+            ->values()
+            ->map(function (array $item) use (&$saldo) {
+                $saldo += $item['hutang'] - $item['pembayaran'];
+                $item['saldo'] = max(0, $saldo);
+
+                return $item;
+            });
+
+        $summary = [
+            'jumlah_transaksi' => $hutangList->count(),
+            'total_hutang' => $hutangList->sum('total_hutang'),
+            'total_dibayar' => $hutangList->sum('total_dibayar'),
+            'sisa_hutang' => $hutangList->sum('sisa_hutang'),
+        ];
+
+        return view('hutang.kartu.show', compact('supplier', 'hutangList', 'mutasi', 'summary'));
+    }
+
+    /**
+     * Simpan pembayaran hutang (cicilan atau pelunasan).
      */
     public function bayar(Request $request, HutangSupplier $hutang)
     {
         $request->validate([
+            'jumlah_bayar' => 'required|numeric|min:1',
             'metode_pembayaran' => 'required|in:tunai,qris,transfer',
             'keterangan' => 'nullable|string|max:255',
         ]);
@@ -85,33 +205,47 @@ class HutangController extends Controller
             return back()->with('error', 'Hutang ini sudah lunas.');
         }
 
+        $sisaHutang = (float) $hutang->sisa_hutang;
+        $maxBayar = (float) $hutang->total_harus_bayar;
+
+        if ((float) $request->jumlah_bayar > $maxBayar) {
+            return back()->with('error', 'Jumlah bayar melebihi sisa hutang (Rp '.number_format($maxBayar, 0, ',', '.').')');
+        }
+
         DB::beginTransaction();
 
         try {
-            $bunga = $hutang->bunga;
-            $jumlahBayar = (float) $hutang->sisa_hutang + $bunga;
+            $jumlahBayar = (float) $request->jumlah_bayar;
+            $principalPaid = min($jumlahBayar, $sisaHutang);
+            $bungaDibayar = max(0, $jumlahBayar - $sisaHutang);
 
             PembayaranHutang::create([
                 'hutang_id' => $hutang->id,
                 'tanggal_bayar' => now(),
                 'jumlah_bayar' => $jumlahBayar,
-                'bunga' => $bunga,
+                'bunga' => $bungaDibayar,
                 'metode_pembayaran' => $request->metode_pembayaran,
                 'keterangan' => $request->keterangan,
             ]);
 
+            $sisaHutangBaru = max(0, $sisaHutang - $principalPaid);
+            $status = $sisaHutangBaru <= 0 ? 'lunas' : 'belum_lunas';
+
             $hutang->update([
-                'total_dibayar' => $hutang->total_hutang,
-                'sisa_hutang' => 0,
-                'status' => 'lunas',
+                'total_dibayar' => (float) $hutang->total_dibayar + $principalPaid,
+                'sisa_hutang' => $sisaHutangBaru,
+                'status' => $status,
             ]);
 
-            $hutang->pembelian?->update(['status_pembayaran' => 'lunas']);
+            if ($status === 'lunas') {
+                $hutang->pembelian?->update(['status_pembayaran' => 'lunas']);
+            }
 
             DB::commit();
 
-            return back()->with('success', 'Hutang berhasil dilunasi sebesar Rp '.number_format($jumlahBayar, 0, ',', '.').
-                ($bunga > 0 ? ' (termasuk bunga keterlambatan Rp '.number_format($bunga, 0, ',', '.').')' : '').'.');
+            return back()->with('success', 'Pembayaran hutang sebesar Rp '.number_format($jumlahBayar, 0, ',', '.').
+                ($bungaDibayar > 0 ? ' (termasuk bunga keterlambatan Rp '.number_format($bungaDibayar, 0, ',', '.').')' : '').
+                ' berhasil dicatat.');
 
         } catch (\Exception $e) {
             DB::rollBack();
@@ -164,7 +298,7 @@ class HutangController extends Controller
             // Synchronize status_pembayaran in Pembelian table if it exists
             if ($hutang->pembelian) {
                 $hutang->pembelian->update([
-                    'status_pembayaran' => $status === 'lunas' ? 'lunas' : 'belum_lunas',
+                    'status_pembayaran' => $status,
                 ]);
             }
 

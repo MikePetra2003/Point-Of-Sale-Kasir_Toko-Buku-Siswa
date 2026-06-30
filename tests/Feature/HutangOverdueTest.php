@@ -177,4 +177,86 @@ class HutangOverdueTest extends TestCase
         $response->assertRedirect(route('hutang.index'));
         $this->assertDatabaseMissing('hutang_supplier', ['id' => $hutang->id]);
     }
+
+    public function test_owner_can_pay_hutang_in_installments(): void
+    {
+        $owner = User::factory()->owner()->create();
+        $supplier = Supplier::create([
+            'nama_supplier' => 'Supplier Cicilan',
+            'alamat' => 'Alamat Cicilan',
+            'no_telepon' => '08123456789',
+        ]);
+        $hutang = $this->createHutangSupplier($supplier, '2026-12-31');
+
+        $response = $this->actingAs($owner)->post(route('hutang.bayar', $hutang->id), [
+            'jumlah_bayar' => 400000,
+            'metode_pembayaran' => 'tunai',
+            'keterangan' => 'Cicilan pertama',
+        ]);
+
+        $response->assertRedirect();
+        $hutang->refresh();
+
+        $this->assertEquals('belum_lunas', $hutang->status);
+        $this->assertEquals(400000, (float) $hutang->total_dibayar);
+        $this->assertEquals(600000, (float) $hutang->sisa_hutang);
+        $this->assertDatabaseHas('pembayaran_hutang', [
+            'hutang_id' => $hutang->id,
+            'jumlah_bayar' => 400000,
+            'keterangan' => 'Cicilan pertama',
+        ]);
+    }
+
+    public function test_owner_can_fully_pay_remaining_hutang(): void
+    {
+        $owner = User::factory()->owner()->create();
+        $supplier = Supplier::create([
+            'nama_supplier' => 'Supplier Lunas',
+            'alamat' => 'Alamat Lunas',
+            'no_telepon' => '08123456789',
+        ]);
+        $hutang = $this->createHutangSupplier($supplier, '2026-12-31');
+
+        $this->actingAs($owner)->post(route('hutang.bayar', $hutang->id), [
+            'jumlah_bayar' => 300000,
+            'metode_pembayaran' => 'transfer',
+        ]);
+
+        $response = $this->actingAs($owner)->post(route('hutang.bayar', $hutang->id), [
+            'jumlah_bayar' => 700000,
+            'metode_pembayaran' => 'tunai',
+            'keterangan' => 'Pelunasan',
+        ]);
+
+        $response->assertRedirect();
+        $hutang->refresh();
+
+        $this->assertEquals('lunas', $hutang->status);
+        $this->assertEquals(0, (float) $hutang->sisa_hutang);
+        $this->assertEquals(1000000, (float) $hutang->total_dibayar);
+        $this->assertEquals(2, $hutang->pembayaranHutang()->count());
+    }
+
+    public function test_hutang_payment_cannot_exceed_remaining_balance(): void
+    {
+        $owner = User::factory()->owner()->create();
+        $supplier = Supplier::create([
+            'nama_supplier' => 'Supplier Validasi',
+            'alamat' => 'Alamat Validasi',
+            'no_telepon' => '08123456789',
+        ]);
+        $hutang = $this->createHutangSupplier($supplier, '2026-12-31');
+
+        $response = $this->actingAs($owner)->post(route('hutang.bayar', $hutang->id), [
+            'jumlah_bayar' => 1500000,
+            'metode_pembayaran' => 'tunai',
+        ]);
+
+        $response->assertRedirect();
+        $response->assertSessionHas('error');
+        $hutang->refresh();
+
+        $this->assertEquals('belum_lunas', $hutang->status);
+        $this->assertEquals(1000000, (float) $hutang->sisa_hutang);
+    }
 }

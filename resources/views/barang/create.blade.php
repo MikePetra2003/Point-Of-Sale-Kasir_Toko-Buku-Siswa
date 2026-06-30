@@ -88,7 +88,7 @@
     <!-- Back Button Header -->
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
-            <h3 class="fw-bold text-dark mb-1"><i class="bi bi-plus-circle text-success me-2"></i>Tambah Produk</h3>
+            <h3 class="fw-bold text-dark mb-1"><i class="bi bi-plus-circle text-success me-2"></i>Tambah Barang</h3>
             <p class="text-muted small mb-0">Tambahkan barang inventaris baru ke sistem POS Anda.</p>
         </div>
         <a href="{{ route('barang.index') }}" class="btn btn-outline-secondary btn-sm fw-semibold px-3" style="border-radius: 8px;">
@@ -179,6 +179,43 @@
                     <input type="number" name="stok" class="form-control custom-input" value="{{ old('stok', 0) }}" required>
                 </div>
             </div>
+
+            <!-- SECTION 3: Multi Satuan -->
+            <div class="form-section-title">Multi Satuan</div>
+            <p class="text-muted small mb-3">
+                Satuan utama di atas menjadi satuan dasar stok. Tambahkan satuan lain, misalnya 1 pack = 12 pcs.
+            </p>
+
+            @for ($i = 0; $i < 3; $i++)
+                <div class="row g-3 mb-3">
+                    <div class="col-md-3">
+                        <label class="form-label custom-label">Satuan Tambahan</label>
+                        <select name="satuan_tambahan[{{ $i }}][satuan_id]" class="form-select custom-select">
+                            <option value="">-- Opsional --</option>
+                            @foreach ($satuan as $item)
+                                <option value="{{ $item->id }}" {{ old("satuan_tambahan.$i.satuan_id") == $item->id ? 'selected' : '' }}>
+                                    {{ $item->nama_satuan }}
+                                </option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label custom-label">Isi per Satuan Dasar</label>
+                        <input type="number" name="satuan_tambahan[{{ $i }}][konversi_ke_satuan_dasar]" class="form-control custom-input"
+                            value="{{ old("satuan_tambahan.$i.konversi_ke_satuan_dasar") }}" min="2" placeholder="Contoh: 12">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label custom-label">Harga Beli Satuan</label>
+                        <input type="number" name="satuan_tambahan[{{ $i }}][harga_beli]" class="form-control custom-input"
+                            value="{{ old("satuan_tambahan.$i.harga_beli") }}" min="0" placeholder="Harga beli pack/box">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label custom-label">Harga Jual Satuan</label>
+                        <input type="number" name="satuan_tambahan[{{ $i }}][harga_jual]" class="form-control custom-input"
+                            value="{{ old("satuan_tambahan.$i.harga_jual") }}" min="0" placeholder="Harga jual pack/box">
+                    </div>
+                </div>
+            @endfor
 
             <!-- Action Buttons -->
             <hr class="text-muted my-4">

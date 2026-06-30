@@ -203,7 +203,7 @@
                     <td class="text-center">{{ $loop->iteration }}</td>
                     <td><strong>{{ $detail->barang->nama_barang ?? '-' }}</strong></td>
                     <td class="text-center">
-                        <strong>{{ $detail->jumlah }} pcs</strong>
+                        <strong>{{ $detail->jumlah_satuan ?: $detail->jumlah }} {{ $detail->satuan->nama_satuan ?? 'pcs' }}</strong>
                     </td>
                     <td class="text-right">Rp {{ number_format($detail->harga_beli, 0, ',', '.') }}</td>
                     <td class="text-right"><strong>Rp {{ number_format($detail->subtotal, 0, ',', '.') }}</strong></td>

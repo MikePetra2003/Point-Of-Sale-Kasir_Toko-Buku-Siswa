@@ -216,7 +216,9 @@
             <tr>
                 <td>{{ $loop->iteration }}</td>
                 <td class="fw-semibold">{{ $detail->barang->nama_barang ?? '-' }}</td>
-                <td style="text-align:center;">{{ $detail->jumlah }}</td>
+                <td style="text-align:center;">
+                    {{ $detail->jumlah_satuan ?: $detail->jumlah }} {{ $detail->satuan->nama_satuan ?? 'pcs' }}
+                </td>
                 <td style="text-align:right;">Rp {{ number_format($detail->harga_jual, 0, ',', '.') }}</td>
                 <td style="text-align:right;">Rp {{ number_format($detail->subtotal, 0, ',', '.') }}</td>
             </tr>

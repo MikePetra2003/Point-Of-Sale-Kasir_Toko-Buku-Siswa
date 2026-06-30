@@ -348,6 +348,7 @@
                         <th>No ID</th>
                         <th>Pelanggan</th>
                         <th>No Telepon</th>
+                        <th>Izin Kredit</th>
                         <th>Terdaftar</th>
                         <th width="160">Aksi</th>
                     </tr>
@@ -371,6 +372,13 @@
                                     <span class="text-muted">-</span>
                                 @endif
                             </td>
+                            <td>
+                                @if ($item->boleh_kredit)
+                                    <span class="badge bg-success-subtle text-success border border-success-subtle">Boleh Kredit</span>
+                                @else
+                                    <span class="badge bg-secondary-subtle text-secondary border">Belum Diizinkan</span>
+                                @endif
+                            </td>
                             <td class="text-muted">{{ $item->created_at ? $item->created_at->format('d M Y') : '-' }}</td>
                             <td>
                                 <div class="d-flex gap-2">
@@ -392,7 +400,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="6" class="text-center py-5">
+                            <td colspan="7" class="text-center py-5">
                                 <i class="bi bi-people fs-1 text-muted"></i>
                                 <p class="text-muted mt-2 mb-0">Belum ada data pelanggan</p>
                             </td>

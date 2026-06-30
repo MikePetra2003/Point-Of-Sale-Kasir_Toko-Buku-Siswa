@@ -34,9 +34,12 @@ class PelangganController extends Controller
         $validated = $request->validate([
             'nama_pelanggan' => 'required|string|max:100',
             'no_telepon' => 'nullable|string|max:20',
+            'boleh_kredit' => 'nullable|boolean',
         ]);
 
         $validated['nama_pelanggan'] = trim($validated['nama_pelanggan']);
+        $validated['boleh_kredit'] = $this->canSetBolehKredit($request)
+            && $request->boolean('boleh_kredit');
 
         if ($this->namaPelangganSudahDipakai($validated['nama_pelanggan'])) {
             return back()
@@ -63,9 +66,16 @@ class PelangganController extends Controller
         $validated = $request->validate([
             'nama_pelanggan' => 'required|string|max:100',
             'no_telepon' => 'nullable|string|max:20',
+            'boleh_kredit' => 'nullable|boolean',
         ]);
 
         $validated['nama_pelanggan'] = trim($validated['nama_pelanggan']);
+
+        if ($this->canSetBolehKredit($request)) {
+            $validated['boleh_kredit'] = $request->boolean('boleh_kredit');
+        } else {
+            unset($validated['boleh_kredit']);
+        }
 
         if ($this->namaPelangganSudahDipakai($validated['nama_pelanggan'], $pelanggan->id)) {
             return back()
@@ -96,5 +106,10 @@ class PelangganController extends Controller
         return Pelanggan::whereRaw('LOWER(nama_pelanggan) = ?', [Str::lower($namaPelanggan)])
             ->when($ignoreId, fn ($query) => $query->whereKeyNot($ignoreId))
             ->exists();
+    }
+
+    private function canSetBolehKredit(Request $request): bool
+    {
+        return $request->user()?->role === 'owner';
     }
 }

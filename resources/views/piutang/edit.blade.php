@@ -174,7 +174,7 @@
     <div class="edit-card">
         <h5><i class="bi bi-wallet2 me-2"></i>Lengkapi Piutang Pelanggan</h5>
         <div class="card-subtitle">
-            Transaksi kredit sudah tersimpan. Lengkapi data pelanggan, jatuh tempo, dan bayar awal piutang.
+            Transaksi kredit sudah tersimpan. Lengkapi jatuh tempo dan bayar awal piutang untuk pelanggan terdaftar.
         </div>
 
         <div class="info-grid">
@@ -184,7 +184,11 @@
             </div>
             <div class="info-box">
                 <span>Pelanggan</span>
-                <strong>{{ $piutang->pelanggan->nama_pelanggan_display ?? 'Pelanggan Baru' }}</strong>
+                <strong>{{ $piutang->pelanggan->nama_pelanggan_display }}</strong>
+            </div>
+            <div class="info-box">
+                <span>No. ID Pelanggan</span>
+                <strong>{{ $piutang->pelanggan->no_id_pelanggan ?? '-' }}</strong>
             </div>
             <div class="info-box">
                 <span>Total Piutang</span>
@@ -209,15 +213,6 @@
             @method('PATCH')
 
             <div class="row g-3">
-                <div class="col-md-7">
-                    <label class="form-label">Nama Pelanggan Baru *</label>
-                    <input
-                        type="text"
-                        name="nama_pelanggan"
-                        class="form-control"
-                        value="{{ old('nama_pelanggan', $piutang->pelanggan->nama_pelanggan ?? '') }}"
-                        required>
-                </div>
                 <div class="col-md-5">
                     <label class="form-label">No. Telepon *</label>
                     <input
@@ -270,7 +265,7 @@
 
             <div class="helper-note">
                 <i class="bi bi-info-circle me-1"></i>
-                Jika kasir memilih Umum, nama dan no telepon di sini akan dibuat sebagai Pelanggan Baru dan otomatis muncul di Data Pelanggan.
+                Hanya pelanggan terdaftar yang sudah diizinkan kredit oleh owner yang boleh bertransaksi dengan metode kredit.
             </div>
 
             <div class="form-actions">

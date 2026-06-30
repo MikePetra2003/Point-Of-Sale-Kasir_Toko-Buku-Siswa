@@ -250,10 +250,21 @@
                                     </td>
                                 </tr>
                                 @foreach ($barangs as $barang)
+                                @php
+                                    $satuanJson = $barang->barangSatuan->map(function ($unit) {
+                                        return [
+                                            'id' => $unit->id,
+                                            'nama' => $unit->satuan->nama_satuan ?? 'pcs',
+                                            'konversi' => $unit->konversi_ke_satuan_dasar,
+                                            'harga_beli' => (float) $unit->harga_beli,
+                                        ];
+                                    })->values()->toJson();
+                                @endphp
                                 <tr class="barang-row d-none"
                                     data-kode="{{ $barang->kode_barang }}"
                                     data-nama="{{ $barang->nama_barang }}"
-                                    data-supplier-id="{{ $barang->supplier_id }}">
+                                    data-supplier-id="{{ $barang->supplier_id }}"
+                                    data-satuan='{{ $satuanJson }}'>
                                     <td class="text-primary fw-semibold"><small>{{ $barang->kode_barang }}</small></td>
                                     <td class="fw-semibold text-dark">{{ $barang->nama_barang }}</td>
                                     <td class="fw-semibold">Rp {{ number_format($barang->harga_beli, 0, ',', '.') }}</td>
@@ -261,8 +272,7 @@
                                     <td class="text-center">
                                         <button type="button" class="btn btn-add-item"
                                             data-barang-id="{{ $barang->id }}"
-                                            data-barang-nama="{{ $barang->nama_barang }}"
-                                            data-harga-beli="{{ $barang->harga_beli }}">
+                                            data-barang-nama="{{ $barang->nama_barang }}">
                                             <i class="bi bi-plus-lg"></i>
                                         </button>
                                     </td>
@@ -305,7 +315,7 @@
                                     <thead class="table-light">
                                         <tr>
                                             <th>Detail Barang</th>
-                                            <th class="text-center" width="90">Pcs</th>
+                                            <th class="text-center" width="170">Jumlah/Satuan</th>
                                             <th class="text-end">Subtotal</th>
                                             <th class="text-center" width="40"></th>
                                         </tr>
@@ -423,11 +433,18 @@
         return 'Rp ' + Math.round(Number(angka)).toLocaleString('id-ID');
     }
 
-    function tambahKeKeranjang(id, nama, hargaBeli) {
+    function tambahKeKeranjang(id, nama, satuanOptions) {
         if (!document.getElementById('supplierSelect').value) {
             alert('Pilih supplier terlebih dahulu.');
             return;
         }
+
+        if (!satuanOptions.length) {
+            alert('Barang ini belum memiliki data satuan.');
+            return;
+        }
+
+        const satuan = satuanOptions[0];
 
         let existing = keranjang.find(item => item.id === id);
         if (existing) {
@@ -437,11 +454,30 @@
             keranjang.push({
                 id: id,
                 nama: nama,
-                harga: hargaBeli,
+                satuanOptions: satuanOptions,
+                barangSatuanId: satuan.id,
+                namaSatuan: satuan.nama,
+                konversi: parseInt(satuan.konversi) || 1,
+                harga: parseFloat(satuan.harga_beli) || 0,
                 jumlah: 1,
-                subtotal: hargaBeli
+                subtotal: parseFloat(satuan.harga_beli) || 0
             });
         }
+        renderKeranjang();
+    }
+
+    function ubahSatuan(id, barangSatuanId) {
+        let item = keranjang.find(i => i.id === id);
+        if (!item) return;
+
+        const satuan = item.satuanOptions.find(option => parseInt(option.id) === parseInt(barangSatuanId));
+        if (!satuan) return;
+
+        item.barangSatuanId = satuan.id;
+        item.namaSatuan = satuan.nama;
+        item.konversi = parseInt(satuan.konversi) || 1;
+        item.harga = parseFloat(satuan.harga_beli) || 0;
+        item.subtotal = item.jumlah * item.harga;
         renderKeranjang();
     }
 
@@ -479,15 +515,23 @@
                         <td>
                             <div class="fw-semibold text-dark small">${item.nama}</div>
                             <div class="cart-fixed-price mt-1">
-                                @ ${formatRupiah(item.harga)} / pcs
+                                @ ${formatRupiah(item.harga)} / ${item.namaSatuan}
                             </div>
-                            <div class="text-muted small mt-1">${item.jumlah} pcs</div>
+                            <div class="text-muted small mt-1">${item.jumlah} ${item.namaSatuan} = ${item.jumlah * item.konversi} satuan dasar</div>
                             <input type="hidden" name="items[${index}][barang_id]" value="${item.id}">
+                            <input type="hidden" name="items[${index}][barang_satuan_id]" value="${item.barangSatuanId}">
                         </td>
                         <td>
                             <input type="number" name="items[${index}][jumlah]" value="${item.jumlah}"
                                 min="1" class="form-control cart-qty-input mx-auto"
                                 onchange="ubahJumlah(${item.id}, this.value)">
+                            <select class="form-select custom-select mt-2" onchange="ubahSatuan(${item.id}, this.value)">
+                                ${item.satuanOptions.map(option => `
+                                    <option value="${option.id}" ${parseInt(option.id) === parseInt(item.barangSatuanId) ? 'selected' : ''}>
+                                        ${option.nama}
+                                    </option>
+                                `).join('')}
+                            </select>
                         </td>
                         <td class="text-end fw-semibold text-dark"><small>${formatRupiah(item.subtotal)}</small></td>
                         <td class="text-center">
@@ -584,10 +628,13 @@
 
     document.querySelectorAll('.btn-add-item').forEach(function(button) {
         button.addEventListener('click', function() {
+            const row = this.closest('.barang-row');
+            const satuanOptions = JSON.parse(row.dataset.satuan || '[]');
+
             tambahKeKeranjang(
                 parseInt(this.dataset.barangId),
                 this.dataset.barangNama,
-                parseFloat(this.dataset.hargaBeli)
+                satuanOptions
             );
         });
     });

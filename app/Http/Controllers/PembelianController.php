@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Barang;
+use App\Models\BarangSatuan;
 use App\Models\DetailPembelian;
 use App\Models\HutangSupplier;
 use App\Models\PembayaranHutang;
@@ -42,7 +43,8 @@ class PembelianController extends Controller
     public function create()
     {
         $suppliers = Supplier::orderBy('nama_supplier')->get();
-        $barangs = Barang::with(['kategori', 'satuan'])
+        $barangs = Barang::with(['kategori', 'satuan', 'barangSatuan.satuan'])
+            ->where('is_active', true)
             ->orderBy('nama_barang')
             ->get();
 
@@ -58,6 +60,7 @@ class PembelianController extends Controller
             'supplier_id' => 'required|exists:supplier,id',
             'items' => 'required|array|min:1',
             'items.*.barang_id' => 'required|exists:barang,id',
+            'items.*.barang_satuan_id' => 'nullable|exists:barang_satuan,id',
             'items.*.jumlah' => 'required|integer|min:1',
             'diskon_persen' => 'nullable|numeric|min:0|max:100',
             'jumlah_bayar_awal' => 'nullable|numeric|min:0',
@@ -70,13 +73,18 @@ class PembelianController extends Controller
             ->map(function ($item) {
                 return [
                     'barang_id' => (int) $item['barang_id'],
+                    'barang_satuan_id' => (int) ($item['barang_satuan_id']
+                        ?? BarangSatuan::where('barang_id', $item['barang_id'])->where('is_satuan_dasar', true)->value('id')),
                     'jumlah' => (int) $item['jumlah'],
                 ];
             })
-            ->groupBy('barang_id')
-            ->map(function ($rows, $barangId) {
+            ->groupBy(fn ($item) => $item['barang_id'].'-'.$item['barang_satuan_id'])
+            ->map(function ($rows) {
+                $first = $rows->first();
+
                 return [
-                    'barang_id' => (int) $barangId,
+                    'barang_id' => (int) $first['barang_id'],
+                    'barang_satuan_id' => (int) $first['barang_satuan_id'],
                     'jumlah' => $rows->sum('jumlah'),
                 ];
             })
@@ -95,6 +103,26 @@ class PembelianController extends Controller
                 throw new \RuntimeException('Barang yang dipilih tidak valid.');
             }
 
+            $barangSatuanIds = $items->pluck('barang_satuan_id');
+            $barangSatuans = BarangSatuan::with('satuan')
+                ->whereIn('id', $barangSatuanIds)
+                ->get()
+                ->keyBy('id');
+
+            if ($barangSatuans->count() !== $barangSatuanIds->count()) {
+                throw new \RuntimeException('Satuan barang yang dipilih tidak valid.');
+            }
+
+            $satuanTidakSesuaiBarang = $items->first(function ($item) use ($barangSatuans) {
+                return (int) $barangSatuans[$item['barang_satuan_id']]->barang_id !== (int) $item['barang_id'];
+            });
+
+            if ($satuanTidakSesuaiBarang) {
+                throw ValidationException::withMessages([
+                    'items' => 'Satuan yang dipilih tidak sesuai dengan barang.',
+                ]);
+            }
+
             $supplierId = (int) $request->supplier_id;
             $barangTidakSesuaiSupplier = $barangs->first(function ($barang) use ($supplierId) {
                 return (int) $barang->supplier_id !== $supplierId;
@@ -106,8 +134,8 @@ class PembelianController extends Controller
                 ]);
             }
 
-            $totalHarga = $items->sum(function ($item) use ($barangs) {
-                return $item['jumlah'] * $barangs[$item['barang_id']]->harga_beli;
+            $totalHarga = $items->sum(function ($item) use ($barangSatuans) {
+                return $item['jumlah'] * $barangSatuans[$item['barang_satuan_id']]->harga_beli;
             });
 
             $tanggalPembelian = now();
@@ -163,20 +191,27 @@ class PembelianController extends Controller
             // Simpan detail pembelian + tambah stok
             foreach ($items as $item) {
                 $barang = $barangs[$item['barang_id']];
-                $subtotal = $item['jumlah'] * $barang->harga_beli;
+                $barangSatuan = $barangSatuans[$item['barang_satuan_id']];
+                $konversi = (int) $barangSatuan->konversi_ke_satuan_dasar;
+                $jumlahDasar = $item['jumlah'] * $konversi;
+                $subtotal = $item['jumlah'] * $barangSatuan->harga_beli;
 
                 DetailPembelian::create([
                     'pembelian_id' => $pembelian->id,
                     'barang_id' => $item['barang_id'],
-                    'jumlah' => $item['jumlah'],
-                    'jumlah_pack' => 0,
-                    'isi_per_pack' => 1,
-                    'harga_beli' => $barang->harga_beli,
+                    'barang_satuan_id' => $barangSatuan->id,
+                    'satuan_id' => $barangSatuan->satuan_id,
+                    'jumlah' => $jumlahDasar,
+                    'jumlah_satuan' => $item['jumlah'],
+                    'konversi_satuan' => $konversi,
+                    'jumlah_pack' => $barangSatuan->satuan?->nama_satuan === 'pack' ? $item['jumlah'] : 0,
+                    'isi_per_pack' => $konversi,
+                    'harga_beli' => $barangSatuan->harga_beli,
                     'subtotal' => $subtotal,
                 ]);
 
                 // Tambah stok barang
-                $barang->increment('stok', $item['jumlah']);
+                $barang->increment('stok', $jumlahDasar);
             }
 
             // Jika belum lunas, catat sebagai hutang ke supplier (jatuh tempo 1 bulan).
@@ -225,14 +260,14 @@ class PembelianController extends Controller
      */
     public function show(Pembelian $pembelian)
     {
-        $pembelian->load(['user', 'supplier', 'detailPembelian.barang', 'hutangSupplier.pembayaranHutang']);
+        $pembelian->load(['user', 'supplier', 'detailPembelian.barang', 'detailPembelian.satuan', 'hutangSupplier.pembayaranHutang']);
 
         return view('pembelian.show', compact('pembelian'));
     }
 
     public function exportPdf(Pembelian $pembelian)
     {
-        $pembelian->load(['user', 'supplier', 'detailPembelian.barang', 'hutangSupplier']);
+        $pembelian->load(['user', 'supplier', 'detailPembelian.barang', 'detailPembelian.satuan', 'hutangSupplier']);
         $filename = 'faktur-pembelian-'.$pembelian->nomor_faktur.'.pdf';
 
         return Pdf::loadView('pembelian.faktur-pdf', compact('pembelian'))

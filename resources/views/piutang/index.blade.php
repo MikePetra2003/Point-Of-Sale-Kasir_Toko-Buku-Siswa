@@ -421,6 +421,9 @@
     <!-- Page Header -->
     <div class="page-header">
         <h2><i class="bi bi-wallet2 me-2"></i>Piutang Pelanggan</h2>
+        <a href="{{ route('kartu.piutang.index') }}" class="btn btn-primary" style="border-radius:11px;font-weight:600;">
+            <i class="bi bi-journal-text me-1"></i> Kartu Piutang
+        </a>
     </div>
 
     <!-- Stats -->

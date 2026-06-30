@@ -489,7 +489,7 @@
 
     <!-- Riwayat Pembayaran -->
     <div class="detail-card">
-        <h5><i class="bi bi-clock-history"></i> Riwayat Pelunasan</h5>
+        <h5><i class="bi bi-clock-history"></i> Riwayat Pembayaran</h5>
 
         @if ($hutang->pembayaranHutang->count() > 0)
             <table class="history-table">
@@ -520,21 +520,22 @@
         @else
             <div class="text-center py-4 text-muted">
                 <i class="bi bi-inbox fs-2"></i>
-                <p class="mt-2 mb-0">Belum ada pelunasan</p>
+                <p class="mt-2 mb-0">Belum ada pembayaran</p>
             </div>
         @endif
     </div>
 
-    <!-- Form Lunasi (jika belum lunas) -->
+    <!-- Form Bayar (jika belum lunas) -->
     @if ($hutang->status !== 'lunas')
         <div class="payment-form">
-            <h5><i class="bi bi-cash-coin me-2"></i>Lunasi Hutang</h5>
+            <h5><i class="bi bi-cash-coin me-2"></i>Bayar Hutang</h5>
 
             <p class="text-muted small mb-3">
-                Total yang harus dibayar:
-                <strong class="text-danger fs-6">Rp {{ number_format($hutang->total_harus_bayar, 0, ',', '.') }}</strong>
+                Sisa hutang:
+                <strong class="text-danger fs-6">Rp {{ number_format($hutang->sisa_hutang, 0, ',', '.') }}</strong>
                 @if ($hutang->bunga > 0)
-                    <span class="text-warning">(termasuk bunga Rp {{ number_format($hutang->bunga, 0, ',', '.') }})</span>
+                    <span class="text-warning">(+ bunga keterlambatan Rp {{ number_format($hutang->bunga, 0, ',', '.') }},
+                        total maks. bayar Rp {{ number_format($hutang->total_harus_bayar, 0, ',', '.') }})</span>
                 @endif
             </p>
 
@@ -542,22 +543,28 @@
                 @csrf
                 <div class="row g-3">
                     <div class="col-md-4">
-                        <label class="form-label">Metode Pembayaran *</label>
+                        <label class="form-label">Jumlah Bayar (Rp) *</label>
+                        <input type="number" name="jumlah_bayar" class="form-control" required min="1"
+                            max="{{ $hutang->total_harus_bayar }}"
+                            value="{{ old('jumlah_bayar') }}"
+                            placeholder="Maks: {{ number_format($hutang->total_harus_bayar, 0, ',', '.') }}">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Metode *</label>
                         <select name="metode_pembayaran" class="form-select" required>
-                            <option value="tunai">Tunai</option>
-                            <option value="qris">QRIS</option>
-                            <option value="transfer">Transfer</option>
+                            <option value="tunai" {{ old('metode_pembayaran', 'tunai') === 'tunai' ? 'selected' : '' }}>Tunai</option>
+                            <option value="qris" {{ old('metode_pembayaran') === 'qris' ? 'selected' : '' }}>QRIS</option>
+                            <option value="transfer" {{ old('metode_pembayaran') === 'transfer' ? 'selected' : '' }}>Transfer</option>
                         </select>
                     </div>
-                    <div class="col-md-8">
+                    <div class="col-md-5">
                         <label class="form-label">Keterangan</label>
-                        <input type="text" name="keterangan" class="form-control" placeholder="Opsional...">
+                        <input type="text" name="keterangan" class="form-control" value="{{ old('keterangan') }}" placeholder="Opsional...">
                     </div>
                 </div>
                 <div class="mt-3">
-                    <button type="submit" class="btn btn-pay"
-                        onclick="return confirm('Lunasi hutang ini sebesar Rp {{ number_format($hutang->total_harus_bayar, 0, ',', '.') }}?')">
-                        <i class="bi bi-check-circle me-1"></i> Lunasi Hutang
+                    <button type="submit" class="btn btn-pay" onclick="return confirm('Simpan pembayaran hutang ini?')">
+                        <i class="bi bi-check-circle me-1"></i> Simpan Pembayaran
                     </button>
                 </div>
             </form>
